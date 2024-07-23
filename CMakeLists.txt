@@ -1,7 +1,11 @@
-cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
 
 include(CMakeDependentOption)
 include(CheckSymbolExists)
+
+# Save the current source/binary dirs if we're in a subdirectory of a larger CMake project.
+set(PROJECTM_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(PROJECTM_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
@@ -32,7 +36,7 @@ set(PROJECTM_SO_VERSION "4")
 # The actual (full) library version of projectM
 set(PROJECTM_LIB_VERSION "${CMAKE_PROJECT_VERSION}")
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH "${PROJECTM_SOURCE_DIR}/cmake")
 
 include(VCSVersion)
 include(GNUInstallDirs)
@@ -68,11 +72,20 @@ option(ENABLE_CXX_INTERFACE "Enable exporting C++ symbols for ProjectM and PCM c
 
 if(ENABLE_SYSTEM_GLM)
     find_package(GLM REQUIRED)
-else()
-    add_library(GLM::GLM INTERFACE IMPORTED)
-    set_target_properties(GLM::GLM PROPERTIES
-            INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/vendor"
-            )
+endif()
+
+if(ENABLE_SYSTEM_PROJECTM_EVAL)
+    find_package(projectM-Eval)
+endif()
+
+if(NOT BUILD_SHARED_LIBS AND CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    # Add "lib" in front of static library files to allow installing both shared and static libs in the same dir.
+    set(CMAKE_STATIC_LIBRARY_PREFIX lib)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
+    # Silence OpenGL API deprecation warnings on macOS.
+    add_compile_definitions(GL_SILENCE_DEPRECATION)
 endif()
 
 if(ENABLE_EMSCRIPTEN)
@@ -94,13 +107,14 @@ if(ENABLE_EMSCRIPTEN)
         )
 
     add_link_options(
-        "SHELL:-s USE_SDL=2"
-        "SHELL:-s MIN_WEBGL_VERSION=2"
-        "SHELL:-s MAX_WEBGL_VERSION=2"
-        "SHELL:-s FULL_ES2=1"
-        "SHELL:-s ALLOW_MEMORY_GROWTH=1"
-        "SHELL:-s NO_DISABLE_EXCEPTION_CATCHING"
-        )
+            "SHELL:-s USE_SDL=2"
+            "SHELL:-s MIN_WEBGL_VERSION=2"
+            "SHELL:-s MAX_WEBGL_VERSION=2"
+            "SHELL:-s FULL_ES2=1"
+            "SHELL:-s FULL_ES3=1"
+            "SHELL:-s ALLOW_MEMORY_GROWTH=1"
+            "SHELL:-s NO_DISABLE_EXCEPTION_CATCHING"
+            )
 
     if(ENABLE_THREADING)
         message(AUTHOR_WARNING "Threading on emscripten is deemed stable, but may have issues. Use with care.\n"
@@ -119,12 +133,14 @@ else()
     endif()
 
     if(ENABLE_GLES)
-        if(NOT CMAKE_SYSTEM_NAME STREQUAL Linux)
-            message(FATAL_ERROR "OpenGL ES 3 support is currently only available for Linux platforms.")
+        message(STATUS "Building for OpenGL Embedded Profile")
+        if(NOT CMAKE_SYSTEM_NAME STREQUAL Linux
+                AND NOT CMAKE_SYSTEM_NAME STREQUAL Android)
+            message(FATAL_ERROR "OpenGL ES 3 support is currently only available for Linux platforms. You're building for ${CMAKE_SYSTEM_NAME}.")
         endif()
 
         # We use a local find script for OpenGL::GLES3 until the proposed changes are merged upstream.
-        list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/gles")
+        list(APPEND CMAKE_MODULE_PATH "${PROJECTM_SOURCE_DIR}/cmake/gles")
         find_package(OpenGL REQUIRED COMPONENTS GLES3)
         if(NOT TARGET OpenGL::GLES3)
             message(FATAL_ERROR "No suitable GLES3 library was found.")
@@ -133,6 +149,7 @@ else()
         set(PROJECTM_OPENGL_LIBRARIES OpenGL::GLES3)
         set(USE_GLES ON)
     else()
+        message(STATUS "Building for OpenGL Core Profile")
         find_package(OpenGL REQUIRED)
         set(PROJECTM_OPENGL_LIBRARIES OpenGL::GL)
         # GLX is required by SOIL2 on platforms with the X Window System (e.g. most Linux distributions)
@@ -184,10 +201,11 @@ else()
     set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 endif()
 
+add_subdirectory(vendor)
+
 include(features.cmake)
 
 add_subdirectory(presets)
-add_subdirectory(vendor)
 add_subdirectory(src)
 
 if(BUILD_TESTING)

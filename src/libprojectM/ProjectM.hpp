@@ -22,8 +22,8 @@
 
 #include "projectM-4/projectM_export.h"
 
-#include "libprojectM/Common.hpp"
-#include "libprojectM/PCM.hpp"
+#include "Common.hpp"
+#include "PCM.hpp"
 
 #ifdef _WIN32
 

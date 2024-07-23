@@ -32,7 +32,7 @@
 
 #if PROJECTM_USE_THREADS
 
-#include "libprojectM/BackgroundWorker.hpp"
+#include "BackgroundWorker.hpp"
 
 #endif
 
